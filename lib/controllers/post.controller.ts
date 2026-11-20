@@ -1,13 +1,14 @@
 import { Router, type Request, type Response } from 'express';
+import mongoose from 'mongoose';
 import type Controller from '../interfaces/controller.interface';
-
-type AddPostBody = { elem?: unknown; element?: unknown };
-
-let testArr = [4, 5, 6, 3, 5, 3, 7, 5, 13, 5, 6, 4, 3, 6, 3, 6];
+import { checkPostCount } from '../middlewares/checkPostCount.middleware';
+import type { IData } from '../modules/models/data.model';
+import DataService from '../modules/services/data.service';
 
 class PostController implements Controller {
     public path = '/api/post';
     public router = Router();
+    private readonly dataService = new DataService();
 
     constructor() {
         this.initializeRoutes();
@@ -16,95 +17,105 @@ class PostController implements Controller {
     private initializeRoutes(): void {
         this.router.get(`${this.path}/latest`, this.getAll);
         this.router.get(`${this.path}/:id`, this.getById);
-        this.router.get('/api/posts', this.getPosts);
+        this.router.get('/api/posts', this.getAll);
         this.router.post(this.path, this.addData);
-        this.router.post(`${this.path}/:id`, this.addData);
+        this.router.post(`${this.path}/:num`, checkPostCount, this.getPostByNum);
         this.router.delete(`${this.path}/:id`, this.deleteById);
         this.router.delete('/api/posts', this.deleteAll);
     }
 
-    private getAll = (_request: Request, response: Response): void => {
-        response.status(200).json(testArr);
+    private getAll = async (_request: Request, response: Response): Promise<void> => {
+        try {
+            const posts = await this.dataService.query({});
+            response.status(200).json(posts);
+        } catch (error) {
+            this.respondWithServerError(response, error);
+        }
     };
 
-    private getById = (request: Request<{ id: string }>, response: Response): void => {
-        const id = this.parseNonNegativeInteger(request.params.id);
-        if (id === null) {
-            response.status(400).json({ error: 'id must be a non-negative integer' });
+    private getById = async (request: Request<{ id: string }>, response: Response): Promise<void> => {
+        const { id } = request.params;
+        if (!mongoose.isObjectIdOrHexString(id)) {
+            response.status(400).json({ error: 'Invalid post id' });
             return;
         }
 
-        if (id >= testArr.length) {
-            response.status(404).json({ error: 'Post not found' });
-            return;
+        try {
+            const post = await this.dataService.getById(id);
+            if (!post) {
+                response.status(404).json({ error: 'Post not found' });
+                return;
+            }
+            response.status(200).json(post);
+        } catch (error) {
+            this.respondWithServerError(response, error);
         }
-
-        response.status(200).json(testArr[id]);
     };
 
-    private getPosts = (request: Request, response: Response): void => {
-        const limitQuery = request.query.limit;
-        if (limitQuery === undefined) {
-            response.status(200).json(testArr);
+    private addData = async (request: Request<Record<string, never>, unknown, IData>, response: Response): Promise<void> => {
+        const { title, text, image } = request.body ?? {};
+        if (typeof title !== 'string' || typeof text !== 'string' || typeof image !== 'string') {
+            response.status(400).json({ error: 'title, text, and image must be strings' });
             return;
         }
 
-        if (typeof limitQuery !== 'string') {
-            response.status(400).json({ error: 'limit must be a non-negative integer' });
-            return;
+        try {
+            const post = await this.dataService.createPost({ title, text, image });
+            response.status(200).json(post);
+        } catch (error) {
+            if (error instanceof mongoose.Error.ValidationError) {
+                response.status(400).json({ error: 'Invalid post data' });
+                return;
+            }
+            this.respondWithServerError(response, error);
         }
-
-        const limit = this.parseNonNegativeInteger(limitQuery);
-        if (limit === null) {
-            response.status(400).json({ error: 'limit must be a non-negative integer' });
-            return;
-        }
-
-        response.status(200).json(testArr.slice(0, limit));
     };
 
-    private addData = (
-        request: Request<Record<string, string>, unknown, AddPostBody>,
-        response: Response,
-    ): void => {
-        const value = request.body?.elem ?? request.body?.element;
-        if (typeof value !== 'number' || !Number.isFinite(value)) {
-            response.status(400).json({ error: 'Request body must contain a numeric elem or element' });
+    private getPostByNum = async (request: Request<{ num: string }>, response: Response): Promise<void> => {
+        const index = Number(request.params.num);
+        try {
+            const posts = await this.dataService.query({});
+            if (index >= posts.length) {
+                response.status(404).json({ error: 'Post not found' });
+                return;
+            }
+            response.status(200).json(posts[index]);
+        } catch (error) {
+            this.respondWithServerError(response, error);
+        }
+    };
+
+    private deleteById = async (request: Request<{ id: string }>, response: Response): Promise<void> => {
+        const { id } = request.params;
+        if (!mongoose.isObjectIdOrHexString(id)) {
+            response.status(400).json({ error: 'Invalid post id' });
             return;
         }
 
-        testArr.push(value);
-        response.status(200).json(testArr);
+        try {
+            const result = await this.dataService.deleteById(id);
+            if (result.deletedCount === 0) {
+                response.status(404).json({ error: 'Post not found' });
+                return;
+            }
+            response.sendStatus(200);
+        } catch (error) {
+            this.respondWithServerError(response, error);
+        }
     };
 
-    private deleteById = (request: Request<{ id: string }>, response: Response): void => {
-        const id = this.parseNonNegativeInteger(request.params.id);
-        if (id === null) {
-            response.status(400).json({ error: 'id must be a non-negative integer' });
-            return;
+    private deleteAll = async (_request: Request, response: Response): Promise<void> => {
+        try {
+            await this.dataService.deleteAllPosts();
+            response.sendStatus(200);
+        } catch (error) {
+            this.respondWithServerError(response, error);
         }
-
-        if (id >= testArr.length) {
-            response.status(404).json({ error: 'Post not found' });
-            return;
-        }
-
-        testArr.splice(id, 1);
-        response.status(200).json(testArr);
     };
 
-    private deleteAll = (_request: Request, response: Response): void => {
-        testArr = [];
-        response.status(200).json(testArr);
-    };
-
-    private parseNonNegativeInteger(value: string): number | null {
-        if (!/^\d+$/.test(value)) {
-            return null;
-        }
-
-        const parsed = Number(value);
-        return Number.isSafeInteger(parsed) ? parsed : null;
+    private respondWithServerError(response: Response, error: unknown): void {
+        console.error('Post request failed:', error);
+        response.status(500).json({ error: 'Internal server error' });
     }
 }
 

@@ -14,13 +14,16 @@
  },
  "scripts": {
   "dev": "ts-node ./lib/index.ts",
-  "build": "tsc"
+  "start": "ts-node ./lib/index.ts",
+  "build": "tsc",
+  "watch": "nodemon"
  },
  "devDependencies": {
   "@types/express": "^4.17.14",
   "@types/morgan": "1.9.3",
   "@types/node": "^14.18.33",
   "node-gyp": "^13.1.0",
+  "nodemon": "^3.1.14",
   "ts-node": "10.9.1",
   "typescript": "^5.9.3"
  }
