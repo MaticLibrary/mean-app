@@ -26,6 +26,60 @@ class DataService {
    public async deleteData(query: Query<string | number | boolean>) {
        return PostModel.deleteMany(query);
    }
-}
 
+   public async updateById(id: string, postParams: Partial<IData>) {
+      return await PostModel.findByIdAndUpdate(id, postParams, {
+         new: true,
+         runValidators: true
+      }).select('-__v');
+   }
+
+   public async getPaginated(
+       page: number,
+       limit: number,
+       sortField: string,
+       sortOrder: 1 | -1
+   ) {
+       const [items, total] = await Promise.all([
+          PostModel.find({}, { __v: 0 })
+             .sort({ [sortField]: sortOrder })
+             .skip((page - 1) * limit)
+             .limit(limit),
+          PostModel.countDocuments()
+       ]);
+
+       return {
+          items,
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit)
+       };
+   }
+
+   public async search(phrase: string) {
+       const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+       const regex = new RegExp(escaped, 'i');
+
+       return PostModel.find(
+          { $or: [{ title: regex }, { text: regex }] },
+          { __v: 0 }
+       ).sort({ createdAt: -1 });
+   }
+
+   public async getStats() {
+       const [stats] = await PostModel.aggregate([
+          {
+             $group: {
+                _id: null,
+                count: { $sum: 1 },
+                oldest: { $min: '$createdAt' },
+                newest: { $max: '$createdAt' }
+             }
+          }
+       ]);
+
+       return stats ?? { count: 0, oldest: null, newest: null };
+   }
+}
 export default DataService;

@@ -5,6 +5,7 @@ import type { Server } from 'http';
 import type Controller from './interfaces/controller.interface';
 import { config } from './config';
 import { requestLogger } from './middlewares/requestLogger.middleware';
+import { errorHandler } from './middlewares/errorHandler.middleware';
 
 class App {
     public app: Application;
@@ -14,6 +15,8 @@ class App {
         this.app = express();
         this.initializeMiddlewares();
         this.initializeControllers(controllers);
+        this.initializeErrorHandling();
+        this.connectToDatabase();
     }
 
     private initializeMiddlewares(): void {
@@ -25,6 +28,10 @@ class App {
         for (const controller of controllers) {
             this.app.use('/', controller.router);
         }
+    }
+
+    private initializeErrorHandling(): void {
+        this.app.use(errorHandler);
     }
 
     public listen(): Server {
